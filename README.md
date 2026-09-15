@@ -27,6 +27,8 @@ git submodule update --init --recursive
 
 Model files (`.gguf`) are not tracked in this repository — download one separately (e.g. from Hugging Face) and pass its path as the argument.
 
+This is a funny test in order to know in depth how LLAMA.cpp works. We will grow together.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
