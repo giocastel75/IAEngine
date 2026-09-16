@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 #include "llama.h"
 #include "ggml-backend.h"
@@ -8,10 +10,20 @@ int main(int argc, char *argv[])
     struct llama_model_params model_params;
     struct llama_model *model;
     const struct llama_vocab *vocab;
-    char description[256];
 
-    printf("IAEngine v0.03 - Model Inspector\n");
-    printf("--------------------------------\n\n");
+    const char *text;
+    int text_len;
+
+    llama_token *tokens;
+    int32_t n_tokens;
+    int32_t capacity;
+    int32_t i;
+
+    char piece[256];
+    int32_t piece_len;
+
+    printf("IAEngine v0.04 - Tokenizer Inspector\n");
+    printf("------------------------------------\n\n");
 
     if (argc < 2)
     {
@@ -19,14 +31,24 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("Loading model:\n%s\n\n", argv[1]);
+    /*
+     * Test text.
+     * Later we will read this from keyboard.
+     */
+    text = "Ciao, come stai?";
+    text_len = (int) strlen(text);
 
+    printf("Input text:\n%s\n\n", text);
+
+    /*
+     * Initialize llama.cpp / GGML.
+     */
     ggml_backend_load_all();
 
     model_params = llama_model_default_params();
-
-    /* CPU only for now */
     model_params.n_gpu_layers = 0;
+
+    printf("Loading model...\n");
 
     model = llama_model_load_from_file(
         argv[1],
@@ -39,44 +61,96 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("\nMODEL LOADED\n");
-    printf("--------------------------------\n");
+    printf("Model loaded.\n\n");
 
+    /*
+     * Get the vocabulary/tokenizer associated with the model.
+     */
     vocab = llama_model_get_vocab(model);
 
-    description[0] = '\0';
-    llama_model_desc(model, description, sizeof(description));
+    /*
+     * Allocate more than enough space for our small test string.
+     */
+    capacity = text_len + 16;
 
-    printf("Description       : %s\n", description);
-    printf("Parameters        : %llu\n",
-           (unsigned long long) llama_model_n_params(model));
+    tokens = (llama_token *) malloc(
+        sizeof(llama_token) * capacity
+    );
 
-    printf("Model size        : %llu bytes\n",
-           (unsigned long long) llama_model_size(model));
+    if (tokens == NULL)
+    {
+        printf("ERROR: unable to allocate token buffer.\n");
+        llama_model_free(model);
+        return 1;
+    }
 
-    printf("Training context  : %d tokens\n",
-           (int) llama_model_n_ctx_train(model));
+    /*
+     * Tokenize.
+     *
+     * add_special   = true
+     * parse_special = false
+     */
+    n_tokens = llama_tokenize(
+        vocab,
+        text,
+        text_len,
+        tokens,
+        capacity,
+        true,
+        false
+    );
 
-    printf("Embedding size    : %d\n",
-           (int) llama_model_n_embd(model));
+    if (n_tokens < 0)
+    {
+        printf("ERROR: token buffer too small.\n");
+        free(tokens);
+        llama_model_free(model);
+        return 1;
+    }
 
-    printf("Transformer layers: %d\n",
-           (int) llama_model_n_layer(model));
+    printf("Number of tokens: %d\n\n", (int) n_tokens);
 
-    printf("Attention heads   : %d\n",
-           (int) llama_model_n_head(model));
+    printf("TOKEN LIST\n");
+    printf("------------------------------------\n");
 
-    printf("KV heads          : %d\n",
-           (int) llama_model_n_head_kv(model));
+    for (i = 0; i < n_tokens; i++)
+    {
+        piece_len = llama_token_to_piece(
+            vocab,
+            tokens[i],
+            piece,
+            sizeof(piece) - 1,
+            0,
+            true
+        );
 
-    printf("Vocabulary size   : %d tokens\n",
-           (int) llama_vocab_n_tokens(vocab));
+        if (piece_len >= 0)
+        {
+            piece[piece_len] = '\0';
 
-    printf("--------------------------------\n");
+            printf(
+                "Token %2d | ID %6d | \"%s\"\n",
+                (int) i,
+                (int) tokens[i],
+                piece
+            );
+        }
+        else
+        {
+            printf(
+                "Token %2d | ID %6d | <unable to decode>\n",
+                (int) i,
+                (int) tokens[i]
+            );
+        }
+    }
 
+    printf("------------------------------------\n");
+
+    free(tokens);
     llama_model_free(model);
 
-    printf("\nModel released.\n");
+    printf("\nDone.\n");
 
     return 0;
 }
